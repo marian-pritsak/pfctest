@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 #**********************************************************************
-# pfctest.py - Written by Jeremy Georges
+# pfctest.py - Written by Jeremy Georges, Marian Pritsak
 # Version 1.0  - 05/22/2015 - Initial Script
 # Version 1.1  - 05/23/2015 -  Fixed minor parse bug
 # version 1.2  - 05/27/2015 - Changed Time class range to use full 2 bytes (dec 0-65535)
 # version 1.3  - 06/03/2015 - Fix an issue with the class parsing if Class Enable Vector didn't add up to to even two digit hex value
+# version 1.4  - 06/03/2015 - Add logging to remote rsyslog server
 #***********************************************************************
 
 """
@@ -54,11 +55,16 @@ import sys, os
 from struct import *
 import binascii
 import optparse
+import logging
+import logging.handlers
 
 #===========================================================
 # Variables
 #===========================================================
-VERSION='1.0'
+VERSION='1.4'
+
+my_logger = logging.getLogger('MyLogger')
+my_logger.setLevel(logging.DEBUG)
 
 #===========================================================
 # Function Definitions
@@ -106,6 +112,7 @@ def main():
     parser.add_option("--q6", type="int", dest="quanta6", help="Time in Quanta for Class 6",metavar="Quanta")
     parser.add_option("--q7", type="int", dest="quanta7", help="Time in Quanta for Class 7",metavar="Quanta")
     parser.add_option("-i", "--iteration", type="int", dest="iteration", help="Number of times to iterate",metavar="number",default=1)
+    parser.add_option("-r", "--rsyslog-server", type="string", dest="rsyslog_server", default="127.0.0.1", help="Rsyslog server IPv4 address",metavar="IPAddress")
     (options, args) = parser.parse_args()
 
     if options.version:
@@ -122,7 +129,11 @@ def main():
     except:
         print "Unable to create socket. Check your permissions"
         sys.exit(1)
-        
+    
+    # Configure logging
+    handler = logging.handlers.SysLogHandler(address = (options.rsyslog_server,514))
+    my_logger.addHandler(handler)
+
     s.bind((options.interface, 0))
 
     # Put together an ethernet frame here, using ASCII literals 
@@ -285,11 +296,14 @@ def main():
     x = checksum(fullpacket) 
 
     thechecksum=hex(x)
-     
+    
+    packetsend = dst_addr+src_addr+ethertype+opcode+classvector+pfc0+pfc1+pfc2+pfc3+pfc4+pfc5+pfc6+pfc7+thechecksum
     print "Generating %s Packet(s)" % options.iteration
+    my_logger.debug('PFC_STORM_START')
     while options.iteration > 0:
-        s.send(dst_addr+src_addr+ethertype+opcode+classvector+pfc0+pfc1+pfc2+pfc3+pfc4+pfc5+pfc6+pfc7+thechecksum)
+        s.send(packetsend)
         options.iteration -= 1
+    my_logger.debug('PFC_STORM_END')
         
         
 if __name__ == "__main__":
